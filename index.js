@@ -42,41 +42,49 @@ function drawFortune() {
   return fortunes[Math.floor(Math.random() * fortunes.length)];
 }
 
-consola.info('🎋 おみくじBotを起動中...');
+const RECONNECT_INTERVAL_MS = 5000;
 
-watcher.watch({
-  async handle(event) {
-    if (event.eventType !== EventType.POST_CREATED) return;
+async function startWatching() {
+  consola.info('🎋 おみくじBotを起動中...');
 
-    const postEvent = event.postCreatedEvent;
-    if (!postEvent) return;
+  try {
+    await watcher.watch({
+      async handle(event) {
+        if (event.eventType !== EventType.POST_CREATED) return;
 
-    // メンションイベントのみ処理
-    if (!postEvent.eventReasonList.includes(EventReason.POST_MENTIONED)) return;
+        const postEvent = event.postCreatedEvent;
+        if (!postEvent) return;
 
-    const post = postEvent.post;
-    const issuer = postEvent.issuer;
-    if (!post) return;
+        // メンションイベントのみ処理
+        if (!postEvent.eventReasonList.includes(EventReason.POST_MENTIONED)) return;
 
-    const fortune = drawFortune();
-    const text = `🎋 おみくじ結果\n\n${fortune.result}\n${fortune.message}`;
+        const post = postEvent.post;
+        const issuer = postEvent.issuer;
+        if (!post) return;
 
-    try {
-      await client.createPost({
-        text,
-        inReplyToPostId: post.postId,
-      });
-      consola.success(`${issuer?.displayName ?? '不明'} さんにおみくじ結果を返信しました: ${fortune.result}`);
-    } catch (err) {
-      consola.error('返信の送信に失敗しました:', err);
-    }
-  },
-}).then(() => {
-  consola.info('ストリーム接続が終了しました。');
-}).catch((err) => {
-  consola.error('ストリーム接続エラー:', err);
-  process.exit(1);
-});
+        const fortune = drawFortune();
+        const text = `🎋 おみくじ結果\n\n${fortune.result}\n${fortune.message}`;
+
+        try {
+          await client.createPost({
+            text,
+            inReplyToPostId: post.postId,
+          });
+          consola.success(`${issuer?.displayName ?? '不明'} さんにおみくじ結果を返信しました: ${fortune.result}`);
+        } catch (err) {
+          consola.error('返信の送信に失敗しました:', err);
+        }
+      },
+    });
+    consola.warn('ストリーム接続が終了しました。再接続します...');
+  } catch (err) {
+    consola.error('ストリーム接続エラー:', err);
+  }
+
+  setTimeout(startWatching, RECONNECT_INTERVAL_MS);
+}
+
+startWatching();
 
 // graceful shutdown
 process.on('SIGINT', () => {
